@@ -57,3 +57,18 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+
+  postgres-db:
+      image: docker.io/library/postgres:16-alpine
+      container_name: postgres-db
+      environment:
+        POSTGRES_USER: javaboii
+        POSTGRES_PASSWORD: supersecretpassword
+        POSTGRES_DB: online_judge
+      ports:
+        - "5432:5432"
+      volumes:
+        - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
