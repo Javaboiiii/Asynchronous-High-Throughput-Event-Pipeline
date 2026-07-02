@@ -65,7 +65,7 @@ func processSingleMessage(db *sql.DB, m kafka.Message) {
 	SET status=$1, stdout=$2, stderr=$3, execution_time=$4, memory_used=$5
 	WHERE id=$6`
 
-	_, err = tx.Exec(updateQuery, results.Status, results.Stdout, results.Stderr, results.ExecutionTime, results.MemoryUsed, submissdion.Id)
+	_, err = tx.Exec(updateQuery, results.Status, results.Stdout, results.Stderr, results.ExecutionTime, results.MemoryUsed, submission.Id)
 
 	if err != nil {
 		log.Print("Failed to updateQuery", err)

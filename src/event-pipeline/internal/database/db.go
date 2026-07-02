@@ -6,6 +6,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
+
 const ConnStr string = "user=javaboii dbname=online_judge password=supersecretpassword sslmode=disable"
 
 func EstablishConnection(connStr string) (*sql.DB, error) {

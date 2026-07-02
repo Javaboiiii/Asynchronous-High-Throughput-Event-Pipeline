@@ -1,0 +1,33 @@
+syntax = "proto3"; 
+
+package submission; 
+option go_package = "./build/pb";
+
+
+service SubmissionService {
+  rpc SubmitHandler (SubmissionRequest) returns (EvaluationResult);
+}
+
+message SubmissionRequest {
+  int32 user_id = 1;
+  int32 problem_id = 2;
+  string language = 3;
+  string code_payload = 4;
+}
+
+message EvaluationResult {
+  string status = 1;
+  string stdout = 2;
+  string stderr = 3;
+  float execution_time = 4;
+  float memory_used = 5;
+}
+
+message KafkaPayload {
+  int32 id = 1;
+  int32 user_id = 2;
+  int32 problem_id = 3;
+  string language = 4;
+  string code_payload = 5;
+  double submitted_at = 6;
+}

@@ -1,38 +1,41 @@
 package main
 
 import (
-	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/internal/ingestion"
+	"log"
+	"net"
+
 	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/controllers"
 	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/internal/database"
-	"github.com/gorilla/mux"
-
-	"net/http"
-	"log"
+	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/internal/ingestion"
+	pb "github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/proto/build"
+	"github.com/segmentio/kafka-go"
+	"google.golang.org/grpc"
 )
 
 func main() {
-	
-	r := mux.NewRouter() 
-	writer := ingestion.GetWriter("submissions")
+	port := ":8080"
+
+	lis, err := net.Listen("tcp", port)
+
 	db, err := database.EstablishConnection(database.ConnStr)
 	if err != nil {
-		log.Print("Error is", err)
-		return ; 
+		log.Fatal(err)
 	}
-	defer writer.Close()
+	defer db.Close()
 
-	r.HandleFunc("/", HomeHandler)
-	r.HandleFunc("/submit", controllers.SubmitHandler(db, writer)).Methods("POST")
+	var kafkaWriter *kafka.Writer = ingestion.GetWriter("submissions")
+	defer kafkaWriter.Close()
 
-	log.Fatal(http.ListenAndServe(":8080", r))
-}
-
-func HomeHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := w.Write([]byte("Welcome to My first Go server"))
+	submissionOpt := &controllers.Server {
+		DB: db,
+		KafkaWriter: kafkaWriter,
+	}
 
 	if err != nil {
-		http.Error(w, "Failed to serve request", http.StatusInternalServerError)
+		log.Fatal("Failed to listen on port", port)
 	}
+
+	grpcServer := grpc.NewServer()
+	pb.RegisterSubmissionServiceServer(grpcServer, submissionOpt)
+	grpcServer.Serve(lis)
 }
-
-
