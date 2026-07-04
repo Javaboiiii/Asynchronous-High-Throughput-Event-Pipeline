@@ -1,4 +1,4 @@
-package main 
+package main
 
 import (
 	"log"
@@ -8,13 +8,12 @@ import (
 
 func main() {
 	DB, err := database.EstablishConnection(database.ConnStr)
-	
-	defer DB.Close()
 
 	if err != nil {
 		log.Print(err)
-		return 
+		return
 	}
+	defer DB.Close()
 
 	createEnum := `
 	DO $$ BEGIN
@@ -23,8 +22,10 @@ func main() {
 			WHEN duplicate_object THEN null; 
 	END $$;`
 
-	database.Query(DB, createEnum)
-	
+	if _, err := DB.Exec(createEnum); err != nil {
+		log.Print(err)
+	}
+
 	createDatabase := `
 	CREATE TABLE IF NOT EXISTS code_submissions(
 		id SERIAL PRIMARY KEY,
@@ -41,7 +42,9 @@ func main() {
 	);
 	`
 
-	database.Query(DB, createDatabase)
+	if _, err := DB.Exec(createDatabase); err != nil {
+		log.Print(err)
+	}
 
 	createUser := `
 		CREATE TABLE IF NOT EXISTS users(
@@ -51,5 +54,8 @@ func main() {
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
 
-	database.Query(DB, createUser)
+	if _, err := DB.Exec(createUser); err != nil {
+		log.Print(err)
+	}
+
 }

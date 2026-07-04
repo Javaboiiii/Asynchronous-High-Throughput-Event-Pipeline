@@ -1,26 +1,47 @@
-package broker 
+package broker
 
-import(
-	"github.com/segmentio/kafka-go"
-	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/internal/models" 
-
+import (
 	"context"
-	"log"
-	"encoding/json"
 	"database/sql"
+	"encoding/json"
+	"log"
+	"os"
+	"strings"
+
+	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/internal/models"
+	"github.com/segmentio/kafka-go"
 )
 
 func GetReader(topic string) *kafka.Reader {
+	brokers := kafkaBrokers()
 	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:29092", "localhost:39092", "localhost:49092"},
-		Topic: topic,
-		GroupID: "submission-workers",
-		MinBytes: 1,
-		MaxBytes: 10e6,
+		Brokers:     brokers,
+		Topic:       topic,
+		GroupID:     "submission-workers",
+		MinBytes:    1,
+		MaxBytes:    10e6,
 		StartOffset: kafka.FirstOffset,
 	})
 
-	return r 
+	return r
+}
+
+func kafkaBrokers() []string {
+	if raw := os.Getenv("KAFKA_BROKERS"); raw != "" {
+		parts := strings.Split(raw, ",")
+		brokers := make([]string, 0, len(parts))
+		for _, broker := range parts {
+			broker = strings.TrimSpace(broker)
+			if broker != "" {
+				brokers = append(brokers, broker)
+			}
+		}
+		if len(brokers) > 0 {
+			return brokers
+		}
+	}
+
+	return []string{"localhost:29092", "localhost:39092", "localhost:49092"}
 }
 
 func ProcessMessages(db *sql.DB, reader *kafka.Reader) {
@@ -41,12 +62,11 @@ func processSingleMessage(db *sql.DB, m kafka.Message) {
 	var tx *sql.Tx
 
 	tx, err = db.Begin()
-	defer tx.Rollback()
-
 	if err != nil {
 		log.Print("Not able to create Transaction")
-		return 
+		return
 	}
+	defer tx.Rollback()
 
 	var submission models.KafkaPayload
 	json.Unmarshal(m.Value, &submission)
@@ -54,7 +74,7 @@ func processSingleMessage(db *sql.DB, m kafka.Message) {
 
 	var results models.EvaluationResult
 
-	// faking for now 
+	// faking for now
 	results.Status = "ACCEPTED"
 	results.Stdout = "FINE"
 	results.Stderr = "NO ERROR"
@@ -71,7 +91,7 @@ func processSingleMessage(db *sql.DB, m kafka.Message) {
 		log.Print("Failed to updateQuery", err)
 	}
 
-	err = tx.Commit() 
+	err = tx.Commit()
 
 	if err != nil {
 		log.Print("Failed to Commit", err)

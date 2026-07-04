@@ -3,18 +3,39 @@ package ingestion
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/segmentio/kafka-go"
 )
 
 func GetWriter(topic string) *kafka.Writer {
+	brokers := kafkaBrokers()
 	w := &kafka.Writer{
-		Addr:     kafka.TCP("localhost:29092", "localhost:39092", "localhost:49092"),
+		Addr:     kafka.TCP(brokers...),
 		Topic:    topic,
 		Balancer: &kafka.Hash{},
 	}
 	return w
+}
+
+func kafkaBrokers() []string {
+	if raw := os.Getenv("KAFKA_BROKERS"); raw != "" {
+		parts := strings.Split(raw, ",")
+		brokers := make([]string, 0, len(parts))
+		for _, broker := range parts {
+			broker = strings.TrimSpace(broker)
+			if broker != "" {
+				brokers = append(brokers, broker)
+			}
+		}
+		if len(brokers) > 0 {
+			return brokers
+		}
+	}
+
+	return []string{"localhost:29092", "localhost:39092", "localhost:49092"}
 }
 
 func WriteMessage(w *kafka.Writer, messages []kafka.Message) error {
@@ -34,7 +55,7 @@ func WriteMessage(w *kafka.Writer, messages []kafka.Message) error {
 		if err != nil {
 			return err
 		}
-		return nil 
+		return nil
 	}
-	return err 
+	return err
 }

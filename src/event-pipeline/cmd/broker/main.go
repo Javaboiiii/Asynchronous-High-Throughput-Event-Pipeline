@@ -1,6 +1,6 @@
-package main 
+package main
 
-import(
+import (
 	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/internal/broker"
 	"github.com/Javaboiiii/Asynchronous-High-Throughput-Event-Pipeline/internal/database"
 
@@ -13,9 +13,9 @@ func main() {
 
 	if err != nil {
 		log.Print("Failed to establish connection with Database")
-		return 
+		return
 	}
-	
+
 	defer db.Close()
 	defer reader.Close()
 

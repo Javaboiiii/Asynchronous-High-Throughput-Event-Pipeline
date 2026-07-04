@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+  # --- Kafka Broker 1 ---
   kafka-1:
     image: docker.io/apache/kafka:latest
     container_name: kafka-1
@@ -9,17 +8,18 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:19092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      KAFKA_LISTENERS: PLAINTEXT://:19092,PLAINTEXT_HOST://:9092,CONTROLLER://:19093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:19092,PLAINTEXT_HOST://localhost:29092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:19093,2@kafka-2:19093,3@kafka-3:19093 # Fixed: Matched to port 19093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
 
+  # --- Kafka Broker 2 ---
   kafka-2:
     image: docker.io/apache/kafka:latest
     container_name: kafka-2
@@ -28,17 +28,18 @@ services:
     environment:
       KAFKA_NODE_ID: 2
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:19092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      KAFKA_LISTENERS: PLAINTEXT://:19092,PLAINTEXT_HOST://:9092,CONTROLLER://:19093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:19092,PLAINTEXT_HOST://localhost:39092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:19093,2@kafka-2:19093,3@kafka-3:19093 # Fixed: Matched to port 19093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
 
+  # --- Kafka Broker 3 ---
   kafka-3:
     image: docker.io/apache/kafka:latest
     container_name: kafka-3
@@ -47,28 +48,118 @@ services:
     environment:
       KAFKA_NODE_ID: 3
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:19092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      KAFKA_LISTENERS: PLAINTEXT://:19092,PLAINTEXT_HOST://:9092,CONTROLLER://:19093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:19092,PLAINTEXT_HOST://localhost:49092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:19093,2@kafka-2:19093,3@kafka-3:19093 # Fixed: Matched to port 19093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
 
+  # --- Kafka Topic Bootstrap ---
+  kafka-init:
+    image: docker.io/apache/kafka:latest
+    container_name: kafka-init
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    command: >
+      sh -c '
+        until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092 --list >/dev/null 2>&1; do
+          echo "Waiting for Kafka to be ready...";
+          sleep 2;
+        done;
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092 --create --if-not-exists --topic submissions --partitions 3 --replication-factor 3;
+        echo "Kafka topic submissions is ready.";
+      '
+
+  # --- PostgreSQL Engine ---
   postgres-db:
-      image: docker.io/library/postgres:16-alpine
-      container_name: postgres-db
-      environment:
-        POSTGRES_USER: javaboii
-        POSTGRES_PASSWORD: supersecretpassword
-        POSTGRES_DB: online_judge
-      ports:
-        - "5432:5432"
-      volumes:
-        - pgdata:/var/lib/postgresql/data
+    image: docker.io/library/postgres:16-alpine
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: javaboii
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: online_judge
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck: 
+      test: ["CMD-SHELL", "pg_isready -U javaboii -d online_judge"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  # --- 1. Database Init Migrator (Runs once and exits) ---
+  db_init:
+    build: .
+    container_name: pipeline-db-migrator
+    command: ./database
+    environment:
+      - DB_CONN_STR=host=postgres-db port=5432 user=javaboii password=supersecretpassword dbname=online_judge sslmode=disable
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+
+  # --- 2. Core gRPC Ingestion API Gateway ---
+  ingestion:
+    build: .
+    container_name: grpc-ingestion-gateway
+    command: ./ingestion
+    ports:
+      - "8080:8080" # Your gRPC exposure port
+    environment:
+      - DB_CONN_STR=host=postgres-db port=5432 user=javaboii password=supersecretpassword dbname=online_judge sslmode=disable
+      - KAFKA_BROKERS=kafka-1:19092,kafka-2:19092,kafka-3:19092
+    depends_on:
+      db_init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  # --- 3. Asynchronous Consumer Workers (3 separate nodes) ---
+  worker-alpha:
+    build: .
+    command: ./broker
+    environment:
+      - DB_CONN_STR=host=postgres-db port=5432 user=javaboii password=supersecretpassword dbname=online_judge sslmode=disable
+      - KAFKA_BROKERS=kafka-1:19092,kafka-2:19092,kafka-3:19092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      ingestion:
+        condition: service_started
+
+  worker-beta:
+    build: .
+    command: ./broker
+    environment:
+      - DB_CONN_STR=host=postgres-db port=5432 user=javaboii password=supersecretpassword dbname=online_judge sslmode=disable
+      - KAFKA_BROKERS=kafka-1:19092,kafka-2:19092,kafka-3:19092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      ingestion:
+        condition: service_started
+
+  worker-gamma:
+    build: .
+    command: ./broker
+    environment:
+      - DB_CONN_STR=host=postgres-db port=5432 user=javaboii password=supersecretpassword dbname=online_judge sslmode=disable
+      - KAFKA_BROKERS=kafka-1:19092,kafka-2:19092,kafka-3:19092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      ingestion:
+        condition: service_started
+
+
 
 volumes:
   pgdata:

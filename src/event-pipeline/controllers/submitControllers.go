@@ -13,17 +13,21 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-
-type Server struct 
-{
+type Server struct {
 	pb.UnimplementedSubmissionServiceServer
-	DB *sql.DB
+	DB          *sql.DB
 	KafkaWriter *kafka.Writer
 }
 
 func (s *Server) SubmitHandler(ctx context.Context, req *pb.SubmissionRequest) (*pb.EvaluationResult, error) {
 	var err error
-	tx, _ := s.DB.Begin()
+	tx, err := s.DB.Begin()
+
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
 	insertQuery := `
 	INSERT INTO code_submissions(user_id, problem_id, language, code_payload, status)
 	VALUES ($1, $2, $3, $4, 'PENDING')
@@ -37,16 +41,14 @@ func (s *Server) SubmitHandler(ctx context.Context, req *pb.SubmissionRequest) (
 		return nil, err
 	}
 
-	defer tx.Rollback()
-
-	ctime := time.Now().Format("RFC3339")
+	ctime := time.Now().Format(time.RFC3339)
 	idString := strconv.Itoa(int(req.UserId)) + "-" + ctime
 
 	payload := models.KafkaPayload{
-		Id: submissionId,
-		UserId: int(req.UserId),
-		ProblemId: int(req.ProblemId),
-		Language: req.Language,
+		Id:          submissionId,
+		UserId:      int(req.UserId),
+		ProblemId:   int(req.ProblemId),
+		Language:    req.Language,
 		CodePayload: req.CodePayload,
 		SubmittedAt: ctime,
 	}
@@ -55,21 +57,20 @@ func (s *Server) SubmitHandler(ctx context.Context, req *pb.SubmissionRequest) (
 
 	message := []kafka.Message{
 		kafka.Message{
-			Key: []byte(idString),
+			Key:   []byte(idString),
 			Value: kafkaValueBytes,
 		},
 	}
-	err = ingestion.WriteMessage(s.KafkaWriter, message)
 
-	if err != nil {
-		return nil, err
-	}
-	
 	err = tx.Commit()
 	if err != nil {
 		return nil, err
 	}
 
+	err = ingestion.WriteMessage(s.KafkaWriter, message)
+	if err != nil {
+		return nil, err
+	}
 
 	return &pb.EvaluationResult{
 		Status: "QUEUED",

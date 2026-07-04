@@ -17,6 +17,10 @@ func main() {
 
 	lis, err := net.Listen("tcp", port)
 
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	db, err := database.EstablishConnection(database.ConnStr)
 	if err != nil {
 		log.Fatal(err)
@@ -26,8 +30,8 @@ func main() {
 	var kafkaWriter *kafka.Writer = ingestion.GetWriter("submissions")
 	defer kafkaWriter.Close()
 
-	submissionOpt := &controllers.Server {
-		DB: db,
+	submissionOpt := &controllers.Server{
+		DB:          db,
 		KafkaWriter: kafkaWriter,
 	}
 
